@@ -31,6 +31,9 @@
   #msg.err { display:block; background:color-mix(in srgb, var(--bad) 15%, transparent); }
   code { background:var(--card); padding:1px 5px; border-radius:6px; border:1px solid var(--line); }
   .hidden { display:none; }
+  .budget { margin-top:14px; padding:12px 14px; border-radius:12px; background:var(--card); border:1px solid var(--line); }
+  .calc { margin-top:16px; padding:12px 14px; border-radius:12px; background:var(--card); border:1px solid var(--line); font-size:15px; }
+  .calc b { color:var(--ok); }
 </style>
 </head>
 <body>
@@ -41,6 +44,7 @@
   <div id="bad" class="hidden"><p>Dieser Link ist unvollständig. Bitte den Knopf „Aktie verkaufen“ in einer Bot-Nachricht benutzen.</p></div>
 
   <div id="app" class="hidden">
+    <div id="budgetBox" class="budget hidden">Freies Bot-Budget: <b id="budget"></b></div>
     <div class="tabs"><button id="tSell" class="on">Verkaufen</button><button id="tBuy">Kaufen</button></div>
 
     <section id="sell">
@@ -65,6 +69,7 @@
     <input id="price" inputmode="decimal" placeholder="z. B. 165,50 – leer = aktueller Kurs">
     <div class="muted" style="margin-top:6px">Am genauesten ist euer echter Kurs aus dem Planspiel.</div>
 
+    <div id="calc" class="calc hidden"></div>
     <button id="go" class="send" disabled>Melden</button>
     <div id="msg"></div>
     <div class="muted" style="margin-top:10px">Wird gesendet: <code id="preview">–</code></div>
@@ -80,6 +85,10 @@
 
   var mode = "sell", sel = null, q = null;
   var $ = function (id) { return document.getElementById(id); };
+  var budget = parseFloat(h.get("b")), fees = (h.get("f") || "0.3,15").split(",").map(parseFloat);
+  function eur(x) { return x.toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " €"; }
+  function fee(a) { return Math.max(fees[1] || 15, a * (fees[0] || 0.3) / 100); }
+  if (!isNaN(budget)) { $("budget").textContent = eur(budget); $("budgetBox").classList.remove("hidden"); }
   var posBox = $("pos");
   list.forEach(function (p, i) {
     var b = document.createElement("button");
@@ -129,6 +138,19 @@
     if (sel !== null) { var p = list[sel]; $("qAll").textContent = p[2] + " Stück"; $("qHalf").textContent = Math.max(1, Math.floor(p[2] / 2)) + " Stück"; }
     var c = cmd();
     $("preview").textContent = c || "–";
+    var calc = $("calc");
+    calc.classList.add("hidden");
+    if (c && mode === "sell") {
+      var p = list[sel], typed = parseFloat(($("price").value || "").replace(/\s|€/g, "").replace(",", "."));
+      var px = !isNaN(typed) ? typed : p[3];
+      var n = q === "alle" ? p[2] : q === "half" ? Math.max(1, Math.floor(p[2] / 2)) : +$("qNum").value;
+      if (px) {
+        var gross = n * px, f = fee(gross);
+        calc.innerHTML = "Erlös ca. " + n + " × " + eur(px) + " = " + eur(gross) + "<br>− Gebühr ca. " + eur(f) +
+          (isNaN(budget) ? "" : "<br>Bot-Budget danach: <b>" + eur(budget + gross - f) + "</b>");
+        calc.classList.remove("hidden");
+      }
+    }
     $("go").disabled = !c;
     $("go").textContent = mode === "sell" ? "Verkauf melden" : "Kauf melden";
   }
