@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Trade melden</title>
+<style>
+  :root { --bg:#f9fafb; --card:#fff; --ink:#111827; --muted:#6b7280; --line:#e5e7eb; --sel:#2563eb; --ok:#16a34a; --bad:#dc2626; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0b0f17; --card:#151b26; --ink:#f3f4f6; --muted:#9ca3af; --line:#273042; } }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; }
+  main { max-width:520px; margin:0 auto; padding:16px; }
+  h1 { font-size:22px; margin:8px 0 4px; }
+  .muted { color:var(--muted); font-size:14px; }
+  .tabs { display:flex; gap:8px; margin:16px 0; }
+  .tabs button { flex:1; }
+  h2 { font-size:15px; margin:20px 0 8px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }
+  .grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+  button, input { font:inherit; }
+  .opt, .tabs button { padding:12px; border:2px solid var(--line); border-radius:12px; background:var(--card); color:var(--ink); text-align:left; cursor:pointer; }
+  .tabs button { text-align:center; font-weight:600; }
+  .opt small { display:block; color:var(--muted); font-size:13px; }
+  .opt.on, .tabs button.on { border-color:var(--sel); box-shadow:0 0 0 1px var(--sel) inset; }
+  input { width:100%; padding:12px; border:2px solid var(--line); border-radius:12px; background:var(--card); color:var(--ink); }
+  .row { display:flex; gap:8px; }
+  .send { width:100%; margin-top:20px; padding:16px; border:0; border-radius:14px; background:var(--sel); color:#fff; font-weight:700; font-size:17px; cursor:pointer; }
+  .send:disabled { opacity:.45; cursor:default; }
+  #msg { margin-top:14px; padding:12px; border-radius:12px; display:none; }
+  #msg.ok { display:block; background:color-mix(in srgb, var(--ok) 15%, transparent); }
+  #msg.err { display:block; background:color-mix(in srgb, var(--bad) 15%, transparent); }
+  code { background:var(--card); padding:1px 5px; border-radius:6px; border:1px solid var(--line); }
+  .hidden { display:none; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Trade melden</h1>
+  <div class="muted">Wird beim nächsten Lauf des Bots gebucht (max. ~15 Min.). Ihr bekommt dann eine Bestätigung.</div>
+
+  <div id="bad" class="hidden"><p>Dieser Link ist unvollständig. Bitte den Knopf „Aktie verkaufen“ in einer Bot-Nachricht benutzen.</p></div>
+
+  <div id="app" class="hidden">
+    <div class="tabs"><button id="tSell" class="on">Verkaufen</button><button id="tBuy">Kaufen</button></div>
+
+    <section id="sell">
+      <h2>1. Welche Aktie?</h2>
+      <div id="pos" class="grid"></div>
+      <h2>2. Wie viele?</h2>
+      <div class="grid" id="qty">
+        <button class="opt" data-q="alle">Alle<small id="qAll"></small></button>
+        <button class="opt" data-q="half">Hälfte<small id="qHalf"></small></button>
+      </div>
+      <div style="margin-top:8px"><input id="qNum" type="number" inputmode="numeric" min="1" placeholder="… oder Stückzahl eintippen"></div>
+    </section>
+
+    <section id="buy" class="hidden">
+      <h2>1. Welche Aktie?</h2>
+      <input id="bName" placeholder="Name oder Yahoo-Kürzel, z. B. SAP.DE">
+      <h2>2. Wie viele?</h2>
+      <input id="bNum" type="number" inputmode="numeric" min="1" placeholder="Stückzahl">
+    </section>
+
+    <h2>3. Zu welchem Kurs? (optional)</h2>
+    <input id="price" inputmode="decimal" placeholder="z. B. 165,50 – leer = aktueller Kurs">
+    <div class="muted" style="margin-top:6px">Am genauesten ist euer echter Kurs aus dem Planspiel.</div>
+
+    <button id="go" class="send" disabled>Melden</button>
+    <div id="msg"></div>
+    <div class="muted" style="margin-top:10px">Wird gesendet: <code id="preview">–</code></div>
+  </div>
+</main>
+<script>
+(function () {
+  var h = new URLSearchParams(location.hash.slice(1));
+  var topic = h.get("t"), server = h.get("s") || "https://ntfy.sh", list = [];
+  try { list = JSON.parse(h.get("p") || "[]"); } catch (e) { list = []; }
+  if (!topic || !/^[A-Za-z0-9_-]{1,64}$/.test(topic)) { document.getElementById("bad").classList.remove("hidden"); return; }
+  document.getElementById("app").classList.remove("hidden");
+
+  var mode = "sell", sel = null, q = null;
+  var $ = function (id) { return document.getElementById(id); };
+  var posBox = $("pos");
+  list.forEach(function (p, i) {
+    var b = document.createElement("button");
+    b.className = "opt";
+    b.textContent = p[1];
+    var s = document.createElement("small");
+    s.textContent = p[2] + " Stück";
+    b.appendChild(s);
+    b.onclick = function () { sel = i; mark(posBox, b); upd(); };
+    posBox.appendChild(b);
+  });
+  if (!list.length) posBox.innerHTML = '<div class="muted">Keine Positionen im Link.</div>';
+
+  function mark(box, b) { [].forEach.call(box.querySelectorAll(".opt"), function (x) { x.classList.toggle("on", x === b); }); }
+  [].forEach.call($("qty").querySelectorAll(".opt"), function (b) {
+    b.onclick = function () { q = b.dataset.q; $("qNum").value = ""; mark($("qty"), b); upd(); };
+  });
+  $("qNum").oninput = function () { q = this.value ? "num" : null; mark($("qty"), null); upd(); };
+  ["bName", "bNum", "price"].forEach(function (id) { $(id).oninput = upd; });
+
+  function tab(m) {
+    mode = m;
+    $("tSell").classList.toggle("on", m === "sell"); $("tBuy").classList.toggle("on", m === "buy");
+    $("sell").classList.toggle("hidden", m !== "sell"); $("buy").classList.toggle("hidden", m !== "buy");
+    upd();
+  }
+  $("tSell").onclick = function () { tab("sell"); };
+  $("tBuy").onclick = function () { tab("buy"); };
+
+  function cmd() {
+    var price = $("price").value.trim().replace(/\s|€/g, "");
+    if (price && !/^\d+([.,]\d+)?$/.test(price)) return null;
+    if (mode === "sell") {
+      if (sel === null || !q) return null;
+      var p = list[sel], n;
+      if (q === "alle") n = "alle";
+      else if (q === "half") n = String(Math.max(1, Math.floor(p[2] / 2)));
+      else { n = $("qNum").value.trim(); if (!/^\d+$/.test(n) || +n < 1) return null; }
+      return "verkauf " + p[0] + " " + n + (price ? " " + price : "");
+    }
+    var name = $("bName").value.trim(), m = $("bNum").value.trim();
+    if (!name) return null;
+    if (!/^\d+$/.test(m) || +m < 1) return null;
+    return "kauf " + name + " " + m + (price ? " " + price : "");
+  }
+  function upd() {
+    if (sel !== null) { var p = list[sel]; $("qAll").textContent = p[2] + " Stück"; $("qHalf").textContent = Math.max(1, Math.floor(p[2] / 2)) + " Stück"; }
+    var c = cmd();
+    $("preview").textContent = c || "–";
+    $("go").disabled = !c;
+    $("go").textContent = mode === "sell" ? "Verkauf melden" : "Kauf melden";
+  }
+  $("go").onclick = function () {
+    var c = cmd(); if (!c) return;
+    $("go").disabled = true;
+    fetch(server.replace(/\/$/, "") + "/" + topic, { method: "POST", body: c })
+      .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); })
+      .then(function () { $("msg").className = "ok"; $("msg").textContent = "✅ Gemeldet: „" + c + "“. Die Bestätigung kommt beim nächsten Lauf."; })
+      .catch(function (e) { $("msg").className = "err"; $("msg").textContent = "❌ Senden fehlgeschlagen (" + e.message + "). Bitte nochmal versuchen."; $("go").disabled = false; });
+  };
+  upd();
+})();
+</script>
+</body>
+</html>
