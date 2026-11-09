@@ -39,6 +39,7 @@
 <body>
 <main>
   <h1>Trade melden</h1>
+  <div class="muted" id="stand"></div>
   <div class="muted">Wird beim nächsten Lauf des Bots gebucht (max. ~5 Min.). Ihr bekommt dann eine Bestätigung.</div>
 
   <div id="bad" class="hidden"><p>Dieser Link ist unvollständig. Bitte den Knopf „Aktie verkaufen“ in einer Bot-Nachricht benutzen.</p></div>
@@ -88,12 +89,15 @@
   var budget = parseFloat(h.get("b")), fees = (h.get("f") || "0.3,15").split(",").map(parseFloat);
   function eur(x) { return x.toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " €"; }
   function fee(a) { return Math.max(fees[1] || 15, a * (fees[0] || 0.3) / 100); }
+  if (h.get("z")) $("stand").textContent = "Stand der Bot-Nachricht: " + h.get("z") + " (die Liste ändert sich nicht, neue Stände kommen mit neuen Nachrichten)";
+  var done = {};
+  try { done = JSON.parse(localStorage.getItem("gemeldet") || "{}"); } catch (e) {}
   if (!isNaN(budget)) { $("budget").textContent = eur(budget); $("budgetBox").classList.remove("hidden"); }
   var posBox = $("pos");
   list.forEach(function (p, i) {
     var b = document.createElement("button");
     b.className = "opt";
-    b.textContent = p[1];
+    b.textContent = p[1] + (done[p[0] + "@" + (h.get("z") || "")] ? " ✓ gemeldet" : "");
     var s = document.createElement("small");
     s.textContent = p[2] + " Stück";
     b.appendChild(s);
@@ -159,7 +163,7 @@
     $("go").disabled = true;
     fetch(server.replace(/\/$/, "") + "/" + topic, { method: "POST", body: c })
       .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); })
-      .then(function () { $("msg").className = "ok"; $("msg").textContent = "✅ Gemeldet: „" + c + "“. Die Bestätigung kommt beim nächsten Lauf."; })
+      .then(function () { try { if (mode === "sell") { done[list[sel][0] + "@" + (h.get("z") || "")] = 1; localStorage.setItem("gemeldet", JSON.stringify(done)); } } catch (e) {} $("msg").className = "ok"; $("msg").textContent = "✅ Gemeldet: „" + c + "“. Die Bestätigung kommt beim nächsten Lauf."; })
       .catch(function (e) { $("msg").className = "err"; $("msg").textContent = "❌ Senden fehlgeschlagen (" + e.message + "). Bitte nochmal versuchen."; $("go").disabled = false; });
   };
   upd();
